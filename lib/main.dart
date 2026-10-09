@@ -45,169 +45,239 @@ class AllergyExpertApp extends StatelessWidget {
 }
 
 // -----------------------------------------------------------------------------
-// MODEL DATA DAN BASIS PENGETAHUAN
+// MODEL DATA & KNOWLEDGE BASE (SINGLE SOURCE OF TRUTH)
 // -----------------------------------------------------------------------------
 
-class ExpertRule {
-  final String id;
-  final Set<String> conditions;
-  final String conclusion;
-  final String title;
-  final String explanation;
+enum FactCategory { gejala, paparan, aktivitas, waktu, turunan, none }
 
-  const ExpertRule({
-    required this.id,
-    required this.conditions,
-    required this.conclusion,
-    required this.title,
-    required this.explanation,
-  });
-}
+class Fact {
+  final String code;
+  final String label;
+  final FactCategory category;
+  final bool isRedFlag;
 
-class InferenceResult {
-  final Set<String> facts;
-  final List<ExpertRule> firedRules;
-  final Set<String> candidates;
-
-  const InferenceResult({
-    required this.facts,
-    required this.firedRules,
-    required this.candidates,
-  });
+  const Fact(this.code, this.label, this.category, {this.isRedFlag = false});
 }
 
 class RuleBase {
-  // Catatan: aturan berikut adalah contoh untuk tugas pemrograman.
-  // Aturan medis harus ditinjau dan divalidasi sebelum digunakan nyata.
-  static const List<ExpertRule> rules = [
-    ExpertRule(
-      id: 'R01',
-      conditions: {'G01', 'P01', 'A01', 'W01'},
-      conclusion: 'KANDIDAT_DEBU_TUNGAU',
-      title: 'Paparan debu atau tungau',
-      explanation:
-          'Bersin berulang dilaporkan bersama paparan debu saat membersihkan '
-          'ruangan dan gejala muncul saat/setelah paparan.',
-    ),
-    ExpertRule(
-      id: 'R02',
-      conditions: {'G01', 'G03', 'P02', 'A03', 'W01'},
-      conclusion: 'KANDIDAT_ALERGEN_HEWAN',
-      title: 'Paparan hewan',
-      explanation:
-          'Bersin dan gejala mata dilaporkan bersama paparan hewan dan '
-          'interaksi dengan hewan.',
-    ),
-    ExpertRule(
-      id: 'R03',
-      conditions: {'G01', 'G03', 'P03', 'A02', 'W01'},
-      conclusion: 'KANDIDAT_SERBUK_SARI',
-      title: 'Paparan serbuk sari atau tanaman',
-      explanation:
-          'Bersin dan gejala mata dilaporkan saat beraktivitas di luar '
-          'ruangan dengan paparan tanaman/serbuk sari.',
-    ),
-    ExpertRule(
-      id: 'R04',
-      conditions: {'G01', 'P04', 'W01', 'W03'},
-      conclusion: 'KANDIDAT_JAMUR_LINGKUNGAN',
-      title: 'Paparan lingkungan lembap atau berjamur',
-      explanation:
-          'Bersin dilaporkan bersama paparan lingkungan lembap/berjamur '
-          'dan lokasi gejala sesuai area paparan.',
-    ),
-    ExpertRule(
-      id: 'R05A',
-      conditions: {'P05', 'W01', 'W02', 'G04'},
-      conclusion: 'KANDIDAT_PEMICU_MAKANAN',
-      title: 'Paparan makanan sebelum gejala kulit',
-      explanation:
-          'Ada laporan konsumsi makanan sebelum gejala, pola berulang, '
-          'dan gejala kulit. Ini hanya kandidat untuk ditinjau lebih lanjut.',
-    ),
-    ExpertRule(
-      id: 'R05B',
-      conditions: {'P05', 'W01', 'W02', 'G05'},
-      conclusion: 'KANDIDAT_PEMICU_MAKANAN',
-      title: 'Paparan makanan sebelum biduran',
-      explanation:
-          'Ada laporan konsumsi makanan sebelum gejala, pola berulang, '
-          'dan biduran. Ini bukan konfirmasi alergi makanan.',
-    ),
-    ExpertRule(
-      id: 'R05C',
-      conditions: {'P05', 'W01', 'W02', 'G06'},
-      conclusion: 'KANDIDAT_PEMICU_MAKANAN',
-      title: 'Paparan makanan sebelum gejala pencernaan',
-      explanation:
-          'Ada laporan konsumsi makanan sebelum gejala, pola berulang, '
-          'dan keluhan pencernaan. Penyebab lain juga mungkin.',
-    ),
-    ExpertRule(
-      id: 'R06',
-      conditions: {'G04', 'P06', 'W01', 'W03'},
-      conclusion: 'KANDIDAT_PRODUK_KONTAK',
-      title: 'Produk yang bersentuhan dengan kulit',
-      explanation:
-          'Keluhan kulit dilaporkan di area yang sesuai dengan paparan '
-          'produk kontak. Iritasi dan alergi kontak perlu dibedakan.',
-    ),
-    ExpertRule(
-      id: 'R07',
-      conditions: {'KANDIDAT_DEBU_TUNGAU', 'W02'},
-      conclusion: 'POLA_PAPARAN_BERULANG',
-      title: 'Pola paparan berulang',
-      explanation:
-          'Pola gejala dilaporkan berulang pada paparan serupa. '
-          'Pengulangan ini mendukung penelusuran, tetapi tidak membuktikan sebab.',
-    ),
+  // SINGLE SOURCE OF TRUTH untuk definisi fakta
+  static const List<Fact> definedFacts = [
+    // Gejala
+    Fact('G01', 'Bersin berulang', FactCategory.gejala),
+    Fact('G02', 'Hidung berair atau tersumbat', FactCategory.gejala),
+    Fact('G03', 'Mata gatal atau berair', FactCategory.gejala),
+    Fact('G04', 'Kulit gatal atau kemerahan', FactCategory.gejala),
+    Fact('G05', 'Bentol atau biduran', FactCategory.gejala),
+    Fact('G06', 'Mual, muntah, atau nyeri perut', FactCategory.gejala),
+    Fact('G07', 'Bengkak pada bibir atau wajah', FactCategory.gejala, isRedFlag: true),
+    Fact('G08', 'Sulit bernapas / tenggorokan menyempit', FactCategory.gejala, isRedFlag: true),
+    Fact('G09', 'Pusing berat / lemas / hampir pingsan', FactCategory.gejala, isRedFlag: true),
+
+    // Paparan Lingkungan
+    Fact('P01', 'Terpapar debu atau tungau', FactCategory.paparan),
+    Fact('P02', 'Berada dekat kucing, anjing, atau hewan lain', FactCategory.paparan),
+    Fact('P03', 'Terpapar tanaman atau serbuk sari', FactCategory.paparan),
+    Fact('P04', 'Berada di ruangan lembap atau berjamur', FactCategory.paparan),
+    Fact('P05', 'Mengonsumsi makanan tertentu sebelum gejala', FactCategory.paparan),
+    Fact('P06', 'Menggunakan sabun, kosmetik, parfum, atau losion', FactCategory.paparan),
+
+    // Aktivitas
+    Fact('A01', 'Membersihkan kamar atau ruangan', FactCategory.aktivitas),
+    Fact('A02', 'Berkebun atau beraktivitas di luar', FactCategory.aktivitas),
+    Fact('A03', 'Berinteraksi dengan hewan', FactCategory.aktivitas),
+
+    // Waktu & Pola
+    Fact('W01', 'Gejala muncul saat atau setelah paparan', FactCategory.waktu),
+    Fact('W02', 'Gejala berulang pada paparan serupa', FactCategory.waktu),
+    Fact('W03', 'Lokasi gejala sesuai area paparan/kontak', FactCategory.waktu),
   ];
-}
 
-// -----------------------------------------------------------------------------
-// MESIN INFERENSI FORWARD CHAINING
-// -----------------------------------------------------------------------------
-
-InferenceResult runForwardChaining(Set<String> initialFacts) {
-  final facts = <String>{...initialFacts};
-  final firedRules = <ExpertRule>[];
-  final firedRuleIds = <String>{};
-
-  bool changed = true;
-
-  while (changed) {
-    changed = false;
-
-    for (final rule in RuleBase.rules) {
-      if (firedRuleIds.contains(rule.id)) continue;
-
-      // Aturan hanya aktif jika seluruh kondisi IF terpenuhi.
-      final allConditionsSatisfied =
-          rule.conditions.every((condition) => facts.contains(condition));
-
-      if (allConditionsSatisfied) {
-        firedRuleIds.add(rule.id);
-        firedRules.add(rule);
-
-        final addedNewFact = facts.add(rule.conclusion);
-        if (addedNewFact) changed = true;
-      }
+  static Fact? getFactByCode(String code) {
+    try {
+      return definedFacts.firstWhere((f) => f.code == code);
+    } catch (_) {
+      return null;
     }
   }
 
-  final candidates = facts
-      .where((fact) => fact.startsWith('KANDIDAT_'))
-      .toSet();
+  static bool checkRedFlag(Set<String> facts) {
+    if (facts.contains('G08') || facts.contains('G09')) return true;
+    if (facts.contains('G07') &&
+        (facts.contains('G05') || facts.contains('G06') || facts.contains('P05'))) {
+      return true; // Pola Anafilaksis
+    }
+    return false;
+  }
+}
 
-  return InferenceResult(
-    facts: facts,
-    firedRules: firedRules,
-    candidates: candidates,
-  );
+class ExpertRule {
+  final String id;
+  final Set<String> requiredFacts;
+  final Set<String> supportingFacts;
+  final String conclusion;
+  final String title;
+  final String explanation;
+  final bool isCandidate;
+
+  const ExpertRule({
+    required this.id,
+    required this.requiredFacts,
+    this.supportingFacts = const {},
+    required this.conclusion,
+    required this.title,
+    required this.explanation,
+    this.isCandidate = false,
+  });
+
+  // Calculate Match Score (0.0 to 1.0)
+  double matchScore(Set<String> facts) {
+    if (requiredFacts.isNotEmpty) {
+      bool hasAllRequired = requiredFacts.every((f) => facts.contains(f));
+      if (!hasAllRequired) return 0.0;
+    }
+
+    if (supportingFacts.isEmpty) return 1.0;
+
+    int matchCount = supportingFacts.where((f) => facts.contains(f)).length;
+    return matchCount / supportingFacts.length;
+  }
+}
+
+class CandidateResult {
+  final ExpertRule rule;
+  final double score;
+
+  const CandidateResult(this.rule, this.score);
+}
+
+class InferenceEngine {
+  static const List<ExpertRule> rules = [
+    // STAGE 1: FAKTA TURUNAN (DERIVED FACTS)
+    ExpertRule(
+      id: 'L1-01',
+      requiredFacts: {},
+      supportingFacts: {'G01', 'G02', 'G03'},
+      conclusion: 'GEJALA_PERNAPASAN_ATAS',
+      title: 'Gejala Pernapasan',
+      explanation: 'Pasien mengalami gejala pernapasan atas.',
+    ),
+    ExpertRule(
+      id: 'L1-02',
+      requiredFacts: {},
+      supportingFacts: {'G04', 'G05'},
+      conclusion: 'GEJALA_KULIT',
+      title: 'Gejala Kulit',
+      explanation: 'Pasien mengalami keluhan pada kulit.',
+    ),
+    ExpertRule(
+      id: 'L1-03',
+      requiredFacts: {},
+      supportingFacts: {'G06'},
+      conclusion: 'GEJALA_PENCERNAAN',
+      title: 'Gejala Pencernaan',
+      explanation: 'Pasien mengalami keluhan pencernaan.',
+    ),
+    
+    // STAGE 2: KANDIDAT PEMICU BERDASARKAN FAKTA DASAR DAN TURUNAN
+    ExpertRule(
+      id: 'R01',
+      requiredFacts: {'GEJALA_PERNAPASAN_ATAS', 'P01'},
+      supportingFacts: {'A01', 'W01', 'W02'},
+      conclusion: 'KANDIDAT_DEBU_TUNGAU',
+      title: 'Debu atau Tungau',
+      explanation: 'Paparan debu/tungau memicu gejala pernapasan atas. Aktivitas membersihkan ruangan dan waktu kemunculan gejala mendukung temuan ini.',
+      isCandidate: true,
+    ),
+    ExpertRule(
+      id: 'R02',
+      requiredFacts: {'GEJALA_PERNAPASAN_ATAS', 'P02'},
+      supportingFacts: {'A03', 'W01', 'W02'},
+      conclusion: 'KANDIDAT_ALERGEN_HEWAN',
+      title: 'Alergen Hewan (Bulu/Saliva)',
+      explanation: 'Berada dekat hewan terindikasi memicu gejala pernapasan. Interaksi langsung memperkuat hal ini.',
+      isCandidate: true,
+    ),
+    ExpertRule(
+      id: 'R03',
+      requiredFacts: {'GEJALA_PERNAPASAN_ATAS', 'P03'},
+      supportingFacts: {'A02', 'W01'},
+      conclusion: 'KANDIDAT_SERBUK_SARI',
+      title: 'Serbuk Sari / Tanaman',
+      explanation: 'Beraktivitas di luar ruangan dengan paparan tanaman memicu gejala pernapasan.',
+      isCandidate: true,
+    ),
+    ExpertRule(
+      id: 'R04',
+      requiredFacts: {'GEJALA_PERNAPASAN_ATAS', 'P04'},
+      supportingFacts: {'W01', 'W02'},
+      conclusion: 'KANDIDAT_JAMUR_LINGKUNGAN',
+      title: 'Jamur Lingkungan',
+      explanation: 'Berada di ruangan lembap atau berjamur memunculkan gejala pernapasan.',
+      isCandidate: true,
+    ),
+    ExpertRule(
+      id: 'R05',
+      requiredFacts: {'P05'},
+      supportingFacts: {'GEJALA_KULIT', 'GEJALA_PENCERNAAN', 'W01'},
+      conclusion: 'KANDIDAT_PEMICU_MAKANAN',
+      title: 'Pemicu Makanan',
+      explanation: 'Mengonsumsi makanan tertentu memicu gejala (biasanya kulit atau pencernaan).',
+      isCandidate: true,
+    ),
+    ExpertRule(
+      id: 'R06',
+      requiredFacts: {'GEJALA_KULIT', 'P06'},
+      supportingFacts: {'W01', 'W03'},
+      conclusion: 'KANDIDAT_PRODUK_KONTAK',
+      title: 'Produk Kontak',
+      explanation: 'Penggunaan produk tertentu menyebabkan keluhan pada kulit. Kesesuaian lokasi gejala memperkuat hal ini.',
+      isCandidate: true,
+    ),
+  ];
+
+  static List<CandidateResult> runForwardChaining(Set<String> initialFacts) {
+    final facts = <String>{...initialFacts};
+    final firedRules = <ExpertRule>[];
+    
+    // Iterasi Forward Chaining (Max 5 depth untuk menghindari infinite loop)
+    bool changed = true;
+    int depth = 0;
+    while (changed && depth < 5) {
+      changed = false;
+      depth++;
+
+      for (final rule in rules) {
+        if (!rule.isCandidate && !facts.contains(rule.conclusion)) {
+          // Aturan turunan (L1) -> butuh minimal 1 supporting fact (OR logic kustom untuk L1)
+          if (rule.supportingFacts.any((f) => facts.contains(f))) {
+            facts.add(rule.conclusion);
+            firedRules.add(rule);
+            changed = true;
+          }
+        }
+      }
+    }
+
+    // Hitung Match Score untuk Kandidat Pemicu (Stage 2)
+    final candidates = <CandidateResult>[];
+    for (final rule in rules) {
+      if (rule.isCandidate) {
+        double score = rule.matchScore(facts);
+        if (score > 0) {
+          candidates.add(CandidateResult(rule, score));
+        }
+      }
+    }
+
+    // Urutkan kandidat berdasarkan score tertinggi
+    candidates.sort((a, b) => b.score.compareTo(a.score));
+
+    return candidates;
+  }
 }
 
 // -----------------------------------------------------------------------------
-// KUESIONER
+// UI SCREEN: KUESIONER
 // -----------------------------------------------------------------------------
 
 class QuestionnaireScreen extends StatefulWidget {
@@ -218,31 +288,24 @@ class QuestionnaireScreen extends StatefulWidget {
 }
 
 class _QuestionnaireScreenState extends State<QuestionnaireScreen> {
-  final Map<String, bool> _answers = {
-    'G01': false,
-    'G02': false,
-    'G03': false,
-    'G04': false,
-    'G05': false,
-    'G06': false,
-    'G07': false,
-    'P01': false,
-    'P02': false,
-    'P03': false,
-    'P04': false,
-    'P05': false,
-    'P06': false,
-    'A01': false,
-    'A02': false,
-    'A03': false,
-    'W01': false,
-    'W02': false,
-    'W03': false,
-  };
+  final Map<String, bool> _answers = {};
 
   final TextEditingController _foodController = TextEditingController();
   final TextEditingController _productController = TextEditingController();
   final TextEditingController _otherNotesController = TextEditingController();
+
+  bool _isRedFlagActive = false;
+
+  @override
+  void initState() {
+    super.initState();
+    // Initialize _answers from RuleBase single source
+    for (var fact in RuleBase.definedFacts) {
+      if (fact.category != FactCategory.none && fact.category != FactCategory.turunan) {
+        _answers[fact.code] = false;
+      }
+    }
+  }
 
   @override
   void dispose() {
@@ -253,7 +316,10 @@ class _QuestionnaireScreenState extends State<QuestionnaireScreen> {
   }
 
   void _setAnswer(String code, bool value) {
-    setState(() => _answers[code] = value);
+    setState(() {
+      _answers[code] = value;
+      _isRedFlagActive = RuleBase.checkRedFlag(_buildFacts());
+    });
   }
 
   Set<String> _buildFacts() {
@@ -261,31 +327,38 @@ class _QuestionnaireScreenState extends State<QuestionnaireScreen> {
     _answers.forEach((code, value) {
       if (value) facts.add(code);
     });
+    
+    // Keyword extraction sederhana dari teks
+    final foodText = _foodController.text.toLowerCase();
+    if (foodText.contains('telur') || foodText.contains('susu') || foodText.contains('udang') || foodText.contains('kacang')) {
+      facts.add('P05'); // otomatis nambahin P05 jika nulis makanan
+    }
+
     return facts;
   }
 
   void _showResults() {
     final facts = _buildFacts();
 
-    if (facts.isEmpty) {
+    if (facts.where((f) => f.startsWith('G') || f.startsWith('P')).isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
-          content: Text('Pilih setidaknya satu gejala atau faktor paparan.'),
+          content: Text('Pilih setidaknya satu gejala (G) dan satu paparan (P).'),
         ),
       );
       return;
     }
 
-    final result = runForwardChaining(facts);
+    final candidates = InferenceEngine.runForwardChaining(facts);
 
     Navigator.of(context).push(
       MaterialPageRoute(
         builder: (_) => ResultScreen(
-          result: result,
+          candidates: candidates,
+          isRedFlag: _isRedFlagActive,
           foodDescription: _foodController.text.trim(),
           productDescription: _productController.text.trim(),
           notes: _otherNotesController.text.trim(),
-          answers: Map<String, bool>.from(_answers),
         ),
       ),
     );
@@ -293,6 +366,11 @@ class _QuestionnaireScreenState extends State<QuestionnaireScreen> {
 
   @override
   Widget build(BuildContext context) {
+    List<Fact> gejala = RuleBase.definedFacts.where((f) => f.category == FactCategory.gejala).toList();
+    List<Fact> paparan = RuleBase.definedFacts.where((f) => f.category == FactCategory.paparan).toList();
+    List<Fact> aktivitas = RuleBase.definedFacts.where((f) => f.category == FactCategory.aktivitas).toList();
+    List<Fact> waktu = RuleBase.definedFacts.where((f) => f.category == FactCategory.waktu).toList();
+
     return Scaffold(
       body: SafeArea(
         child: CustomScrollView(
@@ -302,50 +380,29 @@ class _QuestionnaireScreenState extends State<QuestionnaireScreen> {
               padding: const EdgeInsets.fromLTRB(16, 18, 16, 28),
               sliver: SliverList(
                 delegate: SliverChildListDelegate([
-                  _buildSafetyNotice(),
-                  const SizedBox(height: 18),
+                  if (_isRedFlagActive) _buildSafetyNotice(),
+                  if (_isRedFlagActive) const SizedBox(height: 18),
+                  
                   _buildQuestionSection(
                     title: '1. Gejala yang dialami',
                     subtitle: 'Pilih semua gejala yang sesuai.',
                     icon: Icons.health_and_safety_outlined,
-                    questions: const [
-                      QuestionItem('G01', 'Bersin berulang'),
-                      QuestionItem('G02', 'Hidung berair atau tersumbat'),
-                      QuestionItem('G03', 'Mata gatal atau berair'),
-                      QuestionItem('G04', 'Kulit gatal atau kemerahan'),
-                      QuestionItem('G05', 'Bentol atau biduran'),
-                      QuestionItem('G06', 'Mual, muntah, atau nyeri perut'),
-                      QuestionItem('G07', 'Bengkak pada bibir atau wajah'),
-                    ],
+                    facts: gejala,
                   ),
                   const SizedBox(height: 16),
                   _buildQuestionSection(
-                    title: '2. Faktor lingkungan',
+                    title: '2. Faktor lingkungan & Makanan',
                     subtitle: 'Pilih paparan yang pernah terjadi sebelum gejala.',
                     icon: Icons.home_outlined,
-                    questions: const [
-                      QuestionItem('P01', 'Terpapar debu atau tungau'),
-                      QuestionItem('P02', 'Berada dekat kucing, anjing, atau hewan lain'),
-                      QuestionItem('P03', 'Terpapar tanaman atau serbuk sari'),
-                      QuestionItem('P04', 'Berada di ruangan lembap atau berjamur'),
-                    ],
-                  ),
-                  const SizedBox(height: 16),
-                  _buildQuestionSection(
-                    title: '3. Makanan dan produk kontak',
-                    subtitle: 'Centang jika paparan mendahului gejala.',
-                    icon: Icons.restaurant_outlined,
-                    questions: const [
-                      QuestionItem('P05', 'Mengonsumsi makanan tertentu sebelum gejala'),
-                      QuestionItem('P06', 'Menggunakan sabun, kosmetik, parfum, atau losion'),
-                    ],
+                    facts: paparan,
                   ),
                   const SizedBox(height: 10),
                   _buildTextField(
                     controller: _foodController,
                     label: 'Makanan yang dikonsumsi (opsional)',
-                    hint: 'Contoh: telur, susu, udang',
+                    hint: 'Contoh: telur, susu, udang, kacang',
                     icon: Icons.restaurant,
+                    onChanged: (_) => setState(() => _isRedFlagActive = RuleBase.checkRedFlag(_buildFacts())),
                   ),
                   const SizedBox(height: 12),
                   _buildTextField(
@@ -356,25 +413,17 @@ class _QuestionnaireScreenState extends State<QuestionnaireScreen> {
                   ),
                   const SizedBox(height: 16),
                   _buildQuestionSection(
-                    title: '4. Aktivitas saat paparan',
+                    title: '3. Aktivitas saat paparan',
                     subtitle: 'Pilih aktivitas yang relevan.',
                     icon: Icons.directions_walk_outlined,
-                    questions: const [
-                      QuestionItem('A01', 'Membersihkan kamar atau ruangan'),
-                      QuestionItem('A02', 'Berkebun atau beraktivitas di luar'),
-                      QuestionItem('A03', 'Berinteraksi dengan hewan'),
-                    ],
+                    facts: aktivitas,
                   ),
                   const SizedBox(height: 16),
                   _buildQuestionSection(
-                    title: '5. Waktu dan pola gejala',
+                    title: '4. Waktu dan pola gejala',
                     subtitle: 'Jawab berdasarkan pengalaman yang sudah terjadi.',
                     icon: Icons.schedule_outlined,
-                    questions: const [
-                      QuestionItem('W01', 'Gejala muncul saat atau setelah paparan'),
-                      QuestionItem('W02', 'Gejala berulang pada paparan serupa'),
-                      QuestionItem('W03', 'Lokasi gejala sesuai area paparan/kontak'),
-                    ],
+                    facts: waktu,
                   ),
                   const SizedBox(height: 16),
                   _buildTextField(
@@ -406,6 +455,7 @@ class _QuestionnaireScreenState extends State<QuestionnaireScreen> {
                         _foodController.clear();
                         _productController.clear();
                         _otherNotesController.clear();
+                        _isRedFlagActive = false;
                       });
                     },
                     icon: const Icon(Icons.restart_alt),
@@ -489,8 +539,8 @@ class _QuestionnaireScreenState extends State<QuestionnaireScreen> {
             runSpacing: 8,
             children: const [
               HeaderChip(label: 'Forward Chaining'),
-              HeaderChip(label: 'Multi-faktor'),
-              HeaderChip(label: 'Prototipe'),
+              HeaderChip(label: 'Match Score'),
+              HeaderChip(label: 'Real-time Alert'),
             ],
           ),
         ],
@@ -509,17 +559,18 @@ class _QuestionnaireScreenState extends State<QuestionnaireScreen> {
       child: const Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Icon(Icons.info_outline, color: Color(0xFF9A5B00)),
+          Icon(Icons.warning_amber_rounded, color: Color(0xFFD32F2F)),
           SizedBox(width: 10),
           Expanded(
             child: Text(
-              'Jika ada kesulitan bernapas, tenggorokan terasa menyempit, '
-              'atau lidah/tenggorokan membengkak, segera cari pertolongan '
-              'darurat. Jangan menunggu hasil aplikasi.',
+              'PERINGATAN DARURAT (REDFLAG)\\n\\n'
+              'Gejala anafilaksis atau gangguan pernapasan terdeteksi. '
+              'Segera cari pertolongan medis darurat! Jangan menunggu hasil analisis.',
               style: TextStyle(
-                color: Color(0xFF714500),
+                color: Color(0xFFD32F2F),
                 height: 1.45,
                 fontSize: 13,
+                fontWeight: FontWeight.bold,
               ),
             ),
           ),
@@ -532,7 +583,7 @@ class _QuestionnaireScreenState extends State<QuestionnaireScreen> {
     required String title,
     required String subtitle,
     required IconData icon,
-    required List<QuestionItem> questions,
+    required List<Fact> facts,
   }) {
     return Container(
       padding: const EdgeInsets.fromLTRB(16, 16, 16, 10),
@@ -589,26 +640,26 @@ class _QuestionnaireScreenState extends State<QuestionnaireScreen> {
             ],
           ),
           const SizedBox(height: 10),
-          ...questions.map(
-            (question) => CheckboxListTile(
-              value: _answers[question.code] ?? false,
-              onChanged: (value) =>
-                  _setAnswer(question.code, value ?? false),
-              title: Text(
-                question.label,
-                style: const TextStyle(fontSize: 14, height: 1.35),
-              ),
-              subtitle: Text(
-                question.code,
-                style: const TextStyle(
-                  color: Color(0xFF98A2B3),
-                  fontSize: 11,
+          ...facts.map(
+            (fact) => Material(
+              color: Colors.transparent,
+              child: CheckboxListTile(
+                value: _answers[fact.code] ?? false,
+                onChanged: (value) => _setAnswer(fact.code, value ?? false),
+                title: Text(
+                  fact.label,
+                  style: TextStyle(
+                    fontSize: 14, 
+                    height: 1.35,
+                    color: fact.isRedFlag ? const Color(0xFFD32F2F) : Colors.black87,
+                    fontWeight: fact.isRedFlag ? FontWeight.bold : FontWeight.normal,
+                  ),
                 ),
+                activeColor: fact.isRedFlag ? const Color(0xFFD32F2F) : const Color(0xFF167D8D),
+                contentPadding: EdgeInsets.zero,
+                controlAffinity: ListTileControlAffinity.leading,
+                dense: true,
               ),
-              activeColor: const Color(0xFF167D8D),
-              contentPadding: EdgeInsets.zero,
-              controlAffinity: ListTileControlAffinity.leading,
-              dense: true,
             ),
           ),
         ],
@@ -622,10 +673,12 @@ class _QuestionnaireScreenState extends State<QuestionnaireScreen> {
     required String hint,
     required IconData icon,
     int maxLines = 1,
+    Function(String)? onChanged,
   }) {
     return TextField(
       controller: controller,
       maxLines: maxLines,
+      onChanged: onChanged,
       decoration: InputDecoration(
         labelText: label,
         hintText: hint,
@@ -634,13 +687,6 @@ class _QuestionnaireScreenState extends State<QuestionnaireScreen> {
       ),
     );
   }
-}
-
-class QuestionItem {
-  final String code;
-  final String label;
-
-  const QuestionItem(this.code, this.label);
 }
 
 class HeaderChip extends StatelessWidget {
@@ -668,383 +714,306 @@ class HeaderChip extends StatelessWidget {
     );
   }
 }
-// baru
 
 // -----------------------------------------------------------------------------
-// HALAMAN HASIL
+// HALAMAN HASIL (RESULT SCREEN)
 // -----------------------------------------------------------------------------
 
 class ResultScreen extends StatelessWidget {
-  final InferenceResult result;
+  final List<CandidateResult> candidates;
+  final bool isRedFlag;
   final String foodDescription;
   final String productDescription;
   final String notes;
-  final Map<String, bool> answers;
 
   const ResultScreen({
     super.key,
-    required this.result,
+    required this.candidates,
+    required this.isRedFlag,
     required this.foodDescription,
     required this.productDescription,
     required this.notes,
-    required this.answers,
   });
 
-  static const Map<String, String> _candidateNames = {
-    'KANDIDAT_DEBU_TUNGAU': 'Debu atau tungau',
-    'KANDIDAT_ALERGEN_HEWAN': 'Paparan hewan',
-    'KANDIDAT_SERBUK_SARI': 'Serbuk sari atau tanaman',
-    'KANDIDAT_JAMUR_LINGKUNGAN': 'Jamur lingkungan',
-    'KANDIDAT_PEMICU_MAKANAN': 'Makanan yang dilaporkan',
-    'KANDIDAT_PRODUK_KONTAK': 'Produk yang bersentuhan dengan kulit',
-  };
-
-  static const Map<String, String> _factLabels = {
-    'G01': 'Bersin berulang',
-    'G02': 'Hidung berair atau tersumbat',
-    'G03': 'Mata gatal atau berair',
-    'G04': 'Kulit gatal atau kemerahan',
-    'G05': 'Biduran',
-    'G06': 'Gejala pencernaan',
-    'G07': 'Pembengkakan bibir atau wajah',
-    'P01': 'Paparan debu atau tungau',
-    'P02': 'Paparan hewan',
-    'P03': 'Paparan tanaman atau serbuk sari',
-    'P04': 'Lingkungan lembap atau berjamur',
-    'P05': 'Konsumsi makanan sebelum gejala',
-    'P06': 'Penggunaan produk kontak',
-    'A01': 'Aktivitas membersihkan ruangan',
-    'A02': 'Aktivitas luar ruangan atau berkebun',
-    'A03': 'Interaksi dengan hewan',
-    'W01': 'Gejala muncul saat/setelah paparan',
-    'W02': 'Gejala berulang pada paparan serupa',
-    'W03': 'Lokasi gejala sesuai area paparan',
-  };
-
   @override
-  Widget build(BuildContext context) {  
-    final candidateFacts = result.candidates.toList()..sort();
-    final emergencyReported = answers['G07'] == true;
-
+  Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Hasil Analisis'),
-        backgroundColor: const Color(0xFFF4F7FA),
+        title: const Text(
+          'Hasil Analisis',
+          style: TextStyle(fontSize: 18, fontWeight: FontWeight.w600),
+        ),
+        centerTitle: true,
+        backgroundColor: Colors.white,
+        elevation: 0,
+        surfaceTintColor: Colors.white,
+        shape: const Border(bottom: BorderSide(color: Color(0xFFE2E8EE))),
       ),
-      body: ListView(
-        padding: const EdgeInsets.fromLTRB(16, 8, 16, 28),
-        children: [
-          Container(
-            padding: const EdgeInsets.all(20),
-            decoration: BoxDecoration(
-              gradient: const LinearGradient(
-                colors: [Color(0xFF126E82), Color(0xFF239A9C)],
-              ),
-              borderRadius: BorderRadius.circular(22),
-            ),
-            child: const Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Icon(Icons.fact_check_outlined, color: Colors.white, size: 32),
-                SizedBox(height: 12),
-                Text(
-                  'Hasil penalaran sistem',
-                  style: TextStyle(
-                    color: Colors.white,
-                    fontSize: 22,
-                    fontWeight: FontWeight.bold,
-                  ),
-                ),
-                SizedBox(height: 6),
-                Text(
-                  'Hasil dibuat dengan mencocokkan fakta input terhadap aturan IF–THEN.',
-                  style: TextStyle(color: Colors.white, height: 1.5),
-                ),
-              ],
-            ),
-          ),
-          const SizedBox(height: 16),
-          if (emergencyReported) ...[
-            _buildEmergencyCard(),
-            const SizedBox(height: 16),
-          ],
-          _buildSectionCard(
-            title: 'Kandidat pemicu',
-            icon: Icons.search,
-            child: candidateFacts.isEmpty
-                ? const Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        'Informasi belum cukup untuk menghasilkan kandidat '
-                        'berdasarkan aturan yang tersedia.',
-                        style: TextStyle(height: 1.5),
-                      ),
-                      SizedBox(height: 8),
-                      Text(
-                        'Ini tidak berarti alergi tidak ada. Aturan sistem '
-                        'masih terbatas dan belum mencakup semua kemungkinan.',
-                        style: TextStyle(
-                          color: Color(0xFF667085),
-                          height: 1.5,
-                          fontSize: 13,
-                        ),
-                      ),
-                    ],
-                  )
-                : Column(
-                    children: candidateFacts.map((candidate) {
-                      final name =
-                          _candidateNames[candidate] ?? candidate;
-                      return Container(
-                        margin: const EdgeInsets.only(bottom: 10),
-                        padding: const EdgeInsets.all(13),
-                        decoration: BoxDecoration(
-                          color: const Color(0xFFEAF7F5),
-                          borderRadius: BorderRadius.circular(14),
-                          border: Border.all(
-                            color: const Color(0xFFCBE8E3),
-                          ),
-                        ),
-                        child: Row(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            const Icon(
-                              Icons.info_outline,
-                              color: Color(0xFF167D8D),
-                            ),
-                            const SizedBox(width: 10),
-                            Expanded(
-                              child: Text(
-                                name,
-                                style: const TextStyle(
-                                  fontWeight: FontWeight.w600,
-                                  height: 1.4,
-                                ),
-                              ),
-                            ),
-                          ],
-                        ),
-                      );
-                    }).toList(),
-                  ),
-          ),
-          const SizedBox(height: 14),
-          _buildSectionCard(
-            title: 'Aturan yang terpenuhi',
-            icon: Icons.account_tree_outlined,
-            child: result.firedRules.isEmpty
-                ? const Text(
-                    'Tidak ada aturan IF–THEN yang seluruh kondisinya '
-                    'terpenuhi.',
-                    style: TextStyle(height: 1.5),
-                  )
-                : Column(
-                    children: result.firedRules.map((rule) {
-                      return Container(
-                        width: double.infinity,
-                        margin: const EdgeInsets.only(bottom: 12),
-                        padding: const EdgeInsets.all(13),
-                        decoration: BoxDecoration(
-                          color: const Color(0xFFF7F9FB),
-                          borderRadius: BorderRadius.circular(14),
-                          border: Border.all(
-                            color: const Color(0xFFE2E8EE),
-                          ),
-                        ),
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Text(
-                              '${rule.id} · ${rule.title}',
-                              style: const TextStyle(
-                                fontWeight: FontWeight.bold,
-                                color: Color(0xFF167D8D),
-                              ),
-                            ),
-                            const SizedBox(height: 7),
-                            Text(
-                              'IF: ${rule.conditions.join(' AND ')}',
-                              style: const TextStyle(
-                                fontSize: 12,
-                                color: Color(0xFF667085),
-                              ),
-                            ),
-                            const SizedBox(height: 6),
-                            Text(
-                              'THEN: ${rule.conclusion}',
-                              style: const TextStyle(
-                                fontSize: 12,
-                                fontWeight: FontWeight.w600,
-                              ),
-                            ),
-                            const SizedBox(height: 8),
-                            Text(
-                              rule.explanation,
-                              style: const TextStyle(height: 1.45),
-                            ),
-                          ],
-                        ),
-                      );
-                    }).toList(),
-                  ),
-          ),
-          const SizedBox(height: 14),
-          _buildSectionCard(
-            title: 'Fakta yang dipilih',
-            icon: Icons.checklist_outlined,
-            child: Wrap(
-              spacing: 8,
-              runSpacing: 8,
-              children: answers.entries
-                  .where((entry) => entry.value)
-                  .map(
-                    (entry) => Chip(
-                      label: Text(
-                        '${entry.key}: ${_factLabels[entry.key] ?? entry.key}',
-                      ),
-                      backgroundColor: const Color(0xFFEAF0F5),
-                      side: BorderSide.none,
-                      labelStyle: const TextStyle(fontSize: 12),
-                    ),
-                  )
-                  .toList(),
-            ),
-          ),
-          if (foodDescription.isNotEmpty ||
-              productDescription.isNotEmpty ||
-              notes.isNotEmpty) ...[
-            const SizedBox(height: 14),
-            _buildSectionCard(
-              title: 'Catatan pengguna',
-              icon: Icons.notes_outlined,
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  if (foodDescription.isNotEmpty)
-                    _noteLine('Makanan', foodDescription),
-                  if (productDescription.isNotEmpty)
-                    _noteLine('Produk', productDescription),
-                  if (notes.isNotEmpty) _noteLine('Catatan', notes),
-                ],
-              ),
-            ),
-          ],
-          const SizedBox(height: 14),
-          _buildSectionCard(
-            title: 'Batasan hasil',
-            icon: Icons.shield_outlined,
-            child: const Text(
-              'Hasil ini merupakan kandidat berdasarkan aturan contoh, '
-              'bukan diagnosis alergi. Aturan IF–THEN belum divalidasi secara '
-              'klinis dan hasil tidak menghitung probabilitas. Jangan mencoba '
-              'paparan ulang untuk menguji dugaan pemicu. Konsultasikan dengan '
-              'tenaga medis untuk penilaian lebih lanjut.',
-              style: TextStyle(height: 1.55),
-            ),
-          ),
-          const SizedBox(height: 22),
-          FilledButton.icon(
-            onPressed: () => Navigator.of(context).pop(),
-            icon: const Icon(Icons.edit_outlined),
-            label: const Text('Kembali ke kuesioner'),
-            style: FilledButton.styleFrom(
-              minimumSize: const Size.fromHeight(52),
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(15),
-              ),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildEmergencyCard() {
-    return Container(
-      padding: const EdgeInsets.all(15),
-      decoration: BoxDecoration(
-        color: const Color(0xFFFFE8E8),
-        border: Border.all(color: const Color(0xFFE9A4A4)),
-        borderRadius: BorderRadius.circular(16),
-      ),
-      child: const Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Icon(Icons.warning_amber_rounded, color: Color(0xFFB42318)),
-          SizedBox(width: 10),
-          Expanded(
-            child: Text(
-              'Kamu menandai pembengkakan bibir atau wajah. Jika pembengkakan '
-              'melibatkan lidah/tenggorokan, disertai kesulitan bernapas, '
-              'pusing berat, atau memburuk cepat, cari pertolongan darurat '
-              'segera. Jangan mengandalkan aplikasi untuk menilai tingkat '
-              'kegawatan.',
-              style: TextStyle(
-                color: Color(0xFF912018),
-                height: 1.5,
-              ),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildSectionCard({
-    required String title,
-    required IconData icon,
-    required Widget child,
-  }) {
-    return Container(
-      padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(18),
-        border: Border.all(color: const Color(0xFFE2E8EE)),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
+      body: SafeArea(
+        child: SingleChildScrollView(
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 20),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-              Icon(icon, color: const Color(0xFF167D8D)),
-              const SizedBox(width: 9),
-              Expanded(
-                child: Text(
-                  title,
-                  style: const TextStyle(
-                    fontWeight: FontWeight.bold,
-                    fontSize: 16,
+              if (isRedFlag) _buildRedFlagBanner(),
+              if (isRedFlag) const SizedBox(height: 16),
+              _buildCandidatesSection(),
+              const SizedBox(height: 20),
+              _buildNotesSection(),
+              const SizedBox(height: 24),
+              OutlinedButton.icon(
+                onPressed: () => Navigator.of(context).pop(),
+                icon: const Icon(Icons.arrow_back),
+                label: const Text('Kembali ke Kuesioner'),
+                style: OutlinedButton.styleFrom(
+                  minimumSize: const Size.fromHeight(50),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(16),
                   ),
                 ),
               ),
             ],
           ),
-          const SizedBox(height: 14),
-          child,
+        ),
+      ),
+    );
+  }
+
+  Widget _buildRedFlagBanner() {
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: const Color(0xFFFFF0F0),
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: const Color(0xFFFFCDD2), width: 1.5),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: const [
+          Row(
+            children: [
+              Icon(Icons.medical_services_outlined, color: Color(0xFFD32F2F)),
+              SizedBox(width: 8),
+              Text(
+                'Tindakan Darurat Diperlukan',
+                style: TextStyle(
+                  color: Color(0xFFD32F2F),
+                  fontWeight: FontWeight.bold,
+                  fontSize: 16,
+                ),
+              ),
+            ],
+          ),
+          SizedBox(height: 10),
+          Text(
+            'Sistem mendeteksi tanda bahaya (seperti sulit bernapas, bengkak wajah, atau pusing berat) yang mungkin merupakan indikasi anafilaksis. Segera hubungi layanan gawat darurat.',
+            style: TextStyle(
+              color: Color(0xFFB71C1C),
+              height: 1.5,
+              fontSize: 13,
+            ),
+          ),
         ],
       ),
     );
   }
 
-  Widget _noteLine(String label, String value) {
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 9),
-      child: RichText(
-        text: TextSpan(
-          style: const TextStyle(
-            color: Color(0xFF344054),
-            height: 1.45,
+  Widget _buildCandidatesSection() {
+    if (candidates.isEmpty) {
+      return _buildEmptyState();
+    }
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        const Text(
+          'Kandidat Pemicu Alergi',
+          style: TextStyle(
+            fontSize: 18,
+            fontWeight: FontWeight.bold,
+            color: Color(0xFF1D2939),
           ),
-          children: [
-            TextSpan(
-              text: '$label: ',
-              style: const TextStyle(fontWeight: FontWeight.bold),
-            ),
-            TextSpan(text: value),
-          ],
         ),
+        const SizedBox(height: 12),
+        ...candidates.map((candidate) {
+          final percentage = (candidate.score * 100).toInt();
+          final isHighConfidence = candidate.score >= 0.7;
+
+          return Container(
+            margin: const EdgeInsets.only(bottom: 12),
+            decoration: BoxDecoration(
+              color: Colors.white,
+              borderRadius: BorderRadius.circular(16),
+              border: Border.all(color: const Color(0xFFE2E8EE)),
+              boxShadow: const [
+                BoxShadow(
+                  color: Color(0x06000000),
+                  blurRadius: 8,
+                  offset: Offset(0, 2),
+                ),
+              ],
+            ),
+            child: Padding(
+              padding: const EdgeInsets.all(16),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Expanded(
+                        child: Text(
+                          candidate.rule.title,
+                          style: const TextStyle(
+                            fontSize: 16,
+                            fontWeight: FontWeight.bold,
+                            color: Color(0xFF1D2939),
+                          ),
+                        ),
+                      ),
+                      Container(
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 8, vertical: 4),
+                        decoration: BoxDecoration(
+                          color: isHighConfidence
+                              ? const Color(0xFFE8F5E9)
+                              : const Color(0xFFFFF3E0),
+                          borderRadius: BorderRadius.circular(8),
+                        ),
+                        child: Text(
+                          isHighConfidence ? 'Cocok $percentage%' : 'Sebagian ($percentage%)',
+                          style: TextStyle(
+                            color: isHighConfidence
+                                ? const Color(0xFF2E7D32)
+                                : const Color(0xFFE65100),
+                            fontSize: 12,
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 8),
+                  Text(
+                    candidate.rule.explanation,
+                    style: const TextStyle(
+                      color: Color(0xFF475467),
+                      height: 1.5,
+                      fontSize: 13,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          );
+        }),
+      ],
+    );
+  }
+
+  Widget _buildEmptyState() {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(32),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(color: const Color(0xFFE2E8EE)),
+      ),
+      child: Column(
+        children: [
+          Container(
+            padding: const EdgeInsets.all(16),
+            decoration: BoxDecoration(
+              color: const Color(0xFFF2F4F7),
+              shape: BoxShape.circle,
+            ),
+            child: const Icon(
+              Icons.search_off_outlined,
+              size: 32,
+              color: Color(0xFF98A2B3),
+            ),
+          ),
+          const SizedBox(height: 16),
+          const Text(
+            'Tidak Cukup Data',
+            style: TextStyle(
+              fontSize: 16,
+              fontWeight: FontWeight.bold,
+              color: Color(0xFF1D2939),
+            ),
+          ),
+          const SizedBox(height: 8),
+          const Text(
+            'Aturan pakar tidak menemukan kandidat pemicu yang cocok dengan '
+            'kombinasi gejala dan paparan yang Anda masukkan.',
+            textAlign: TextAlign.center,
+            style: TextStyle(
+              color: Color(0xFF667085),
+              height: 1.5,
+              fontSize: 13,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildNotesSection() {
+    if (foodDescription.isEmpty && productDescription.isEmpty && notes.isEmpty) {
+      return const SizedBox.shrink();
+    }
+
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: const Color(0xFFF9FAFB),
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: const Color(0xFFEAECF0)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Text(
+            'Catatan Tambahan',
+            style: TextStyle(
+              fontSize: 14,
+              fontWeight: FontWeight.bold,
+              color: Color(0xFF344054),
+            ),
+          ),
+          const SizedBox(height: 12),
+          if (foodDescription.isNotEmpty)
+            _buildNoteItem(Icons.restaurant, 'Makanan: $foodDescription'),
+          if (productDescription.isNotEmpty)
+            _buildNoteItem(Icons.spa_outlined, 'Produk: $productDescription'),
+          if (notes.isNotEmpty)
+            _buildNoteItem(Icons.notes, 'Lainnya: $notes'),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildNoteItem(IconData icon, String text) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 8),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Icon(icon, size: 16, color: const Color(0xFF667085)),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Text(
+              text,
+              style: const TextStyle(
+                color: Color(0xFF475467),
+                fontSize: 13,
+                height: 1.4,
+              ),
+            ),
+          ),
+        ],
       ),
     );
   }

@@ -1,30 +1,48 @@
-// This is a basic Flutter widget test.
-//
-// To perform an interaction with a widget in your test, use the WidgetTester
-// utility in the flutter_test package. For example, you can send tap and scroll
-// gestures. You can also use WidgetTester to find child widgets in the widget
-// tree, read text, and verify that the values of widget properties are correct.
-
-import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
-
 import 'package:alargen_app/main.dart';
 
 void main() {
-  testWidgets('Counter increments smoke test', (WidgetTester tester) async {
-    // Build our app and trigger a frame.
-    await tester.pumpWidget(const MyApp());
+  group('Sistem Pakar Inferensi & RuleBase Tests', () {
+    test('Red flag harus terdeteksi jika ada kesulitan bernapas (G08)', () {
+      final facts = {'G08', 'P01'};
+      expect(RuleBase.checkRedFlag(facts), isTrue);
+    });
 
-    // Verify that our counter starts at 0.
-    expect(find.text('0'), findsOneWidget);
-    expect(find.text('1'), findsNothing);
+    test('Red flag harus terdeteksi pada pola anafilaksis (G07 + G05 + P05)', () {
+      final facts = {'G07', 'G05', 'P05'};
+      expect(RuleBase.checkRedFlag(facts), isTrue);
+    });
 
-    // Tap the '+' icon and trigger a frame.
-    await tester.tap(find.byIcon(Icons.add));
-    await tester.pump();
+    test('Red flag tidak terpicu untuk alergi debu ringan tanpa komplikasi', () {
+      final facts = {'G01', 'G02', 'P01', 'A01'};
+      expect(RuleBase.checkRedFlag(facts), isFalse);
+    });
 
-    // Verify that our counter has incremented.
-    expect(find.text('0'), findsNothing);
-    expect(find.text('1'), findsOneWidget);
+    test('Forward Chaining menghasilkan kandidat debu & tungau dengan score kecocokan', () {
+      // G01 memicu GEJALA_PERNAPASAN_ATAS (turunan L1)
+      // Bersama P01 dan A01, memicu KANDIDAT_DEBU_TUNGAU
+      final facts = {'G01', 'P01', 'A01', 'W01'};
+      final results = InferenceEngine.runForwardChaining(facts);
+
+      expect(results, isNotEmpty);
+      expect(results.first.rule.conclusion, equals('KANDIDAT_DEBU_TUNGAU'));
+      expect(results.first.score, greaterThan(0.5));
+    });
+
+    test('Forward Chaining kandidat makanan dan perhitungan score multi-faktor', () {
+      // P05 + G04 (memicu GEJALA_KULIT)
+      final facts = {'P05', 'G04', 'W01'};
+      final results = InferenceEngine.runForwardChaining(facts);
+
+      expect(results, isNotEmpty);
+      final foodResult = results.firstWhere((r) => r.rule.conclusion == 'KANDIDAT_PEMICU_MAKANAN');
+      expect(foodResult.score, greaterThan(0.0));
+    });
+  });
+
+  testWidgets('App smoke test & initial render', (WidgetTester tester) async {
+    await tester.pumpWidget(const AllergyExpertApp());
+    expect(find.text('Sistem Pakar Pemicu Alergi'), findsOneWidget);
+    expect(find.text('Forward Chaining'), findsOneWidget);
   });
 }
